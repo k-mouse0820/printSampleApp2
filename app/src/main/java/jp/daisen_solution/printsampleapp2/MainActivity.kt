@@ -29,8 +29,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
-import java.time.Instant
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 
 
@@ -48,13 +46,17 @@ class MainActivity : AppCompatActivity(),
     private var systemPath: String = ""
 
 
-    private lateinit var context: Context
     private lateinit var mActivity: Activity
     private lateinit var mOptionsMenu: Menu
 
 
     private val printerSelectResultLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (it.resultCode == Activity.RESULT_OK) {
+
+            binding.progressAction.visibility = View.VISIBLE
+            binding.progressMessage.text = getString(R.string.msg_connectingPrinter)
+
+
             val printerBluetoothDeviceExtra = it.data?.getStringExtra(Consts.bluetoothDeviceExtra)
             Log.v("DEBUG", printerBluetoothDeviceExtra!!)
             val printerBdAddress = printerBluetoothDeviceExtra!!.substring(
@@ -105,7 +107,7 @@ class MainActivity : AppCompatActivity(),
                 util.asset2file(applicationContext, "ErrMsg1.ini", systemPath, "ErrMsg1.ini")
                 util.asset2file(applicationContext, "resource.xml", systemPath, "resource.xml")
 
-                util.asset2file(applicationContext, "EP2G_scanToPrint.lfm", systemPath, "tempLabel.lfm")
+                util.asset2file(applicationContext, "EP2G_samplePrintApp.lfm", systemPath, "tempLabel.lfm")
                 //util.asset2file(applicationContext, "B_LP2D_label.lfm", systemPath, "tempLabel.lfm")
             } catch (e: Exception) {
                 util.showAlertDialog(this,
@@ -128,26 +130,30 @@ class MainActivity : AppCompatActivity(),
                 // 通信ポートのオープン　（非同期処理）
                 var mOpenPortTask = OpenPortTask(this, mBcpControl, mConnectionData)
 
-                binding.progressAction.visibility = View.VISIBLE
                 binding.progressMessage.text = getString(R.string.msg_connectingPrinter)
 
                 if (!mConnectionData!!.isOpen.get()) {
                     CoroutineScope(Dispatchers.Main).launch {
                         var resultMessage = mOpenPortTask.openBluetoothPort()
-                        binding.progressAction.visibility = View.GONE
                         if (resultMessage.equals(getString(R.string.msg_success))) {
                             Log.i("openPort", "isOpen = " + mConnectionData!!.isOpen.toString())
                             mOptionsMenu.findItem(R.id.printer).setIcon(R.drawable.baseline_print_24_white)
                             binding.printButton.isEnabled=true
-
+                            isPrinterConnected = true
+                            binding.progressAction.visibility = View.GONE
                         } else {
                             mOptionsMenu.findItem(R.id.printer).setIcon(R.drawable.baseline_print_24)
-                            util.showAlertDialog(context, resultMessage)
+                            //Toast.makeText(context, resultMessage, Toast.LENGTH_SHORT).show()
+                            util.showAlertDialog(mActivity, resultMessage)
+                            binding.progressAction.visibility = View.GONE
                         }
                     }
                 } else {
+                    //Toast.makeText(context, "すでに接続されています", Toast.LENGTH_LONG).show()
                     Log.v("openPort", "Already opened - skip")
+                    util.showAlertDialog(mActivity, "すでに接続されています")
                 }
+
             }
         }
     }
@@ -158,10 +164,16 @@ class MainActivity : AppCompatActivity(),
         setContentView(binding.root)
         mActivity = this
 
+        binding.progressAction.visibility=View.GONE
         binding.printButton.isEnabled=false
-        binding.printButton.setTextSize(120.0f)
+        //binding.printButton.setTextSize(42.0f)
 
         binding.printButton.setOnClickListener { printButtonClicked() }
+
+        val intent = Intent(applicationContext, SelectPrinterActivity::class.java)
+        printerSelectResultLauncher.launch(intent)
+
+
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -175,7 +187,8 @@ class MainActivity : AppCompatActivity(),
             R.id.printer -> {
                 if(isPrinterConnected){
                     //bt.disconnect()
-                    item.setIcon(R.drawable.baseline_print_24)
+                    //item.setIcon(R.drawable.baseline_print_24)
+                    Toast.makeText(this,"すでに接続されています",Toast.LENGTH_SHORT).show()
                 } else {
                     val intent = Intent(applicationContext, SelectPrinterActivity::class.java)
                     printerSelectResultLauncher.launch(intent)
@@ -197,8 +210,8 @@ class MainActivity : AppCompatActivity(),
         val printItemList = HashMap<String?, String?>()
 
         // 入力欄データ（10桁）
-        if (enteredText.length > 10) {
-            printItemList[getString(R.string.nyuuryokuranData)] = enteredText.substring(0,9)
+        if (enteredText.length > 12) {
+            printItemList[getString(R.string.nyuuryokuranData)] = enteredText.substring(0,11)
         } else {
             printItemList[getString(R.string.nyuuryokuranData)] = enteredText
         }
@@ -265,12 +278,12 @@ class MainActivity : AppCompatActivity(),
 
         // 印刷実行スレッドの起動
         var mPrintExecuteTask = PrintExecuteTask(this,mBcpControl, mPrintData)
-        binding.progressAction.visibility = View.VISIBLE
+        //binding.progressAction.visibility = View.VISIBLE
         binding.progressMessage.text = getString(R.string.msg_executingPrint)
 
         CoroutineScope(Dispatchers.Main).launch {
             var resultMessage = mPrintExecuteTask.print()
-            binding.progressAction.visibility = View.INVISIBLE
+            //binding.progressAction.visibility = View.INVISIBLE
             when (resultMessage) {
                 getString(R.string.msg_success) -> {
                     // mActivity.showDialog(PrintDialogDelegate.Companion.PRINT_COMPLETEMESSAGE_DIALOG)
@@ -289,10 +302,23 @@ class MainActivity : AppCompatActivity(),
         super.onStart()
     }
 
-    override fun onStop() {
-        super.onStop()
-    }
+//    override fun onStop() {
+//        this.closePrinterBluetoothPort()
+//        mBcpControl = null
+//        mConnectionData = null
+//        mPrintData = null
+//        mPrintDialogDelegate = null
+//        super.onStop()
+//    }
 
+    override fun onDestroy() {
+        this.closePrinterBluetoothPort()
+        mBcpControl = null
+        mConnectionData = null
+        mPrintData = null
+        mPrintDialogDelegate = null
+        super.onDestroy()
+    }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // プリンターからのメッセージ受信
